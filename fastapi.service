@@ -1,0 +1,14 @@
+[Unit]
+Description=FastAPI Service
+After=network.target
+
+[Service]
+User=root
+Group=root
+WorkingDirectory=/opt/mavencentral-api
+ExecStart=/opt/mavencentral-api/venv/bin/fastapi run --port 80
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

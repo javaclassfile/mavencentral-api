@@ -1,7 +1,7 @@
 # mavencentral-api
 
 ## Run
-### Ubuntu 24.04 Empty (OVH VPS)
+### Ubuntu 24.04 - NameCheap VPS
 
 
 Install
@@ -21,7 +21,31 @@ Run
 ./venv/bin/fastapi run --port 80
 ```
 
-###  WSL
+Access Point
+- [http://mavencentral.xyz/](http://mavencentral.xyz/)
+- [http://mavencentral.xyz/docs](http://mavencentral.xyz/docs)
+
+
+
+#### Run as Ubuntu service
+- Reference: [Google AI Overview](https://www.google.com/search?q=ubuntu+make+fastapi+server+run+when+startup)
+
+
+Create [`fastapi.service`](fastapi.service)
+
+```
+sudo nano /etc/systemd/system/fastapi.service
+
+systemctl daemon-reload
+systemctl list-unit-files
+
+systemctl enable fastapi.service
+systemctl restart fastapi
+systemctl status fastapi
+```
+
+
+### Ubuntu 24.04 - WSL
 
 Install
 ```
@@ -36,6 +60,7 @@ fastapi run
 Access Point
 - [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
 - [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+
 
 ## Database
 
