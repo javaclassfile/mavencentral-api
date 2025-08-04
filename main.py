@@ -91,14 +91,18 @@ class DBMetadata:
             sqlite3.Error: If there is an error connecting to the database.
         """
 
-        conn = sqlite3.connect('file:' + DBMetadata.SQLITE_FILE_NAME + '?mode=ro', uri=True, check_same_thread=False)
-        cur = conn.cursor()
-        for sql in DBMetadata.SQL_PERF_TUNE:
-            cur.execute(sql)
-        cur.close()
+        try:
+            conn = sqlite3.connect('file:' + DBMetadata.SQLITE_FILE_NAME + '?mode=ro', uri=True, check_same_thread=False)
+            cur = conn.cursor()
+            for sql in DBMetadata.SQL_PERF_TUNE:
+               cur.execute(sql)
+            cur.close()
+            return conn
 
-        return conn
+        except sqlite3.OperationalError as e:
+            raise HTTPException(status_code=503, detail="Database is under maintenance and not available. try again after 2 hours.")
 
+     
     def gav2item(row) -> ModelGAV:
         """ Convert a database row to a GAV item.
         Args:
