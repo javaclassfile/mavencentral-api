@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel
 from typing import Annotated, Final, List
 import logging
+import os
 import sqlite3
 
 
@@ -22,6 +23,9 @@ class ModelGAV(BaseModel):
     file_extension: str
     packaging: str
     name: str
+
+class ModelLastModified(BaseModel):
+    last_modified: str
 
 class ModelUpgrade(BaseModel):
     artifact_version: str
@@ -68,7 +72,8 @@ class DBMetadata:
 
     SQL_GAV_SELECT_ALL : Final = SQL_SELECT_GAV + " LIMIT ? OFFSET ?"
     SQL_GAV_SELECT_FILE_NAME : Final = SQL_SELECT_GAV + " WHERE file_name = ? LIMIT 1"
-    SQL_GAV_SELECT_SINGLE : Final = SQL_SELECT_GAV + " WHERE group_id = ? AND artifact_id = ? AND artifact_version = ? LIMIT 1"
+    SQL_GAV_SELECT_FILE_LAST_MODIFIED : Final = "SELECT max(last_modified) FROM gav WHERE file_name LIKE ? LIMIT 1"
+    SQL_GAV_SELECT_GAV : Final = SQL_SELECT_GAV + " WHERE group_id = ? AND artifact_id = ? AND artifact_version = ? LIMIT " + str(PAGE_SIZE)
 
     # This query is used to find newer versions of a file
     SQL_GAV_UPGRADE : Final = "SELECT distinct artifact_version, max(last_modified) AS last_modified from gav WHERE group_id = ? AND artifact_id = ? AND version_seq > ? GROUP BY artifact_version ORDER BY version_seq LIMIT ?"
@@ -179,6 +184,38 @@ def gav_file_name(
     return item
 
 
+@app.get("/api/filelastmodified/{file_name}", response_model=ModelLastModified)
+def gav_file_last_modified(
+        file_name: str = Path(max_length=DBMetadata.MAXLEN_FILE_NAME)):
+    """ Retrieve the last modified date of a file based on its name.
+    Args:
+        file_name (str): The name of the file to search for.
+    Returns:
+        ModelLastModified: An instance of the LastModified model containing the last modified date.
+    Raises:
+        HTTPException: If the file is not found in the database or if the file name is too short.
+    """
+
+    filename_without_extension, extension = os.path.splitext(file_name)
+    if len(filename_without_extension) < 1:
+        raise HTTPException(status_code=400, detail="File name is too short: " + file_name)
+
+    connection = DBMetadata.connect()
+    cursor = connection.cursor()
+    cursor.execute(DBMetadata.SQL_GAV_SELECT_FILE_LAST_MODIFIED, (filename_without_extension + "%", ))
+    row = cursor.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="File " + file_name + " not found")
+
+    item = ModelLastModified(
+            last_modified=row[0])
+
+    cursor.close()
+    connection.close()
+    return item
+
+
 @app.get("/api/gav", response_model=List[ModelGAV])
 def gav(
         skip: int = 0,
@@ -210,7 +247,7 @@ def gav(
     return items
 
 
-@app.get("/api/gav/{group_id}/{artifact_id}/{artifact_version}", response_model=ModelGAV)
+@app.get("/api/gav/{group_id}/{artifact_id}/{artifact_version}", response_model=List[ModelGAV])
 def gav(
         group_id: str = Path(max_length=DBMetadata.MAXLEN_GROUP_ID),
         artifact_id: str = Path(max_length=DBMetadata.MAXLEN_ARTIFACT_ID),
@@ -230,17 +267,19 @@ def gav(
     gav_str = f"{group_id}/{artifact_id}/{artifact_version}"
     connection = DBMetadata.connect()
     cursor = connection.cursor()
-    cursor.execute(DBMetadata.SQL_GAV_SELECT_SINGLE, (group_id, artifact_id, artifact_version, ))
-    row = cursor.fetchone()
+    cursor.execute(DBMetadata.SQL_GAV_SELECT_GAV, (group_id, artifact_id, artifact_version, ))
+    rows = cursor.fetchall()
 
-    if not row:
+    if not rows:
         raise HTTPException(status_code=404, detail="GAV " + gav_str + " not found")
 
-    item = DBMetadata.gav2item(row)
+    items = []
+    for row in rows:
+        items.append(DBMetadata.gav2item(row))
 
     cursor.close()
     connection.close()
-    return item
+    return items
 
 
 @app.get("/api/fileupgrade/{file_name}", response_model=List[ModelUpgrade])
@@ -297,7 +336,7 @@ def gav_upgrade(
     cursor = connection.cursor()
 
     # Check if the file exists in the database
-    cursor.execute(DBMetadata.SQL_GAV_SELECT_SINGLE, (group_id, artifact_id, artifact_version, ))
+    cursor.execute(DBMetadata.SQL_GAV_SELECT_GAV, (group_id, artifact_id, artifact_version, ))
     row = cursor.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="GAV " + gav_str + " not found")
