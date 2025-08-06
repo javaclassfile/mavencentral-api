@@ -193,8 +193,13 @@ def gav_file_last_modified(
     Returns:
         ModelLastModified: An instance of the LastModified model containing the last modified date.
     Raises:
-        HTTPException: If the file is not found in the database or if the file name is too short.
+        HTTPException: If the file is not found in the database or if the file name is not valid.
     """
+
+    if not file_name.endswith('.jar'):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only .jar files are supported: " + file_name)
+    if '-' not in file_name:
+        raise HTTPException(status_code=400, detail="Invalid file name format. This .jar file is not from maven repository. Expected format: artifact_id-artifact_version.jar: " + file_name)
 
     filename_without_extension, extension = os.path.splitext(file_name)
     if len(filename_without_extension) < 1:
@@ -202,14 +207,23 @@ def gav_file_last_modified(
 
     connection = DBMetadata.connect()
     cursor = connection.cursor()
-    cursor.execute(DBMetadata.SQL_GAV_SELECT_FILE_LAST_MODIFIED, (filename_without_extension + "%", ))
-    row = cursor.fetchone()
 
-    if not row:
-        raise HTTPException(status_code=404, detail="File " + file_name + " not found")
+    # Check if the file exists in the database
+    cursor.execute(DBMetadata.SQL_GAV_SELECT_FILE_NAME, (file_name, ))
+    row = cursor.fetchone()
+    if row:
+        item = DBMetadata.gav2item(row)
+        last_modified = item.last_modified
+    else:
+        # If the file is not found, check for the last modified date of similar files
+        cursor.execute(DBMetadata.SQL_GAV_SELECT_FILE_LAST_MODIFIED, (filename_without_extension + "%", ))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="File " + file_name + " not found")
+        last_modified = row[0]
 
     item = ModelLastModified(
-            last_modified=row[0])
+            last_modified=last_modified)
 
     cursor.close()
     connection.close()
